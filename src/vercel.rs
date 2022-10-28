@@ -25,16 +25,23 @@ struct Pagination {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Record {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub created: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub creator: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
     pub ttl: Option<i64>,
     #[serde(rename = "type")]
     pub dns_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub updated: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<i64>,
     pub value: String,
 }
