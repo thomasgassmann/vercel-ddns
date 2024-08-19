@@ -2,6 +2,8 @@
 
 vercel-ddns is a simple command line tool for creating a DNS record for Vercel's Managed DNS service.
 
+> Note: this is my personal fork of the `vercel-ddns` utility, which among other things allows specifying multiple subdomains and IP types during a single execution.
+
 ## Usage
 
 ### cli
