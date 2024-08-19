@@ -49,10 +49,10 @@ pub struct Args {
     pub domain: String,
 
     #[structopt(short, long, env = "VDDNS_SUBDOMAIN")]
-    pub subdomains: Vec<String>,
+    pub subdomain: Vec<String>,
 
     #[structopt(short, long, possible_values = &IpType::variants(), case_insensitive = true, default_value = "ipv4", env = "VDDNS_IP_TYPE")]
-    pub ip_types: Vec<IpType>,
+    pub ip_type: Vec<IpType>,
 
     #[structopt(long, default_value = "3600", env = "VDDNS_TTL")]
     pub ttl: i64,
@@ -62,7 +62,7 @@ pub struct Args {
 }
 
 pub fn run(args: Args) -> Result<()> {
-    let ips = match get_public_ips(&args.ip_types) {
+    let ips = match get_public_ips(&args.ip_type) {
         Ok(ip) => ip,
         Err(e) => {
             error!("Unable to get public ip. {}", e.to_string());
@@ -70,7 +70,7 @@ pub fn run(args: Args) -> Result<()> {
         }
     };
 
-    for subdomain in args.subdomains.iter() {
+    for subdomain in args.subdomain.iter() {
         for (ip_type, ip) in ips.iter() {
             let rec = Record::new(
                 subdomain.to_string(),
