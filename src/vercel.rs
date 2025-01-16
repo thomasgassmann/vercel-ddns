@@ -78,7 +78,7 @@ struct VercelDNSError {
 }
 
 pub fn get_dns_records(domain: &str, token: &str) -> Result<Vec<Record>> {
-    let uri = format!("https://api.vercel.com/v4/domains/{}/records", domain);
+    let uri = format!("https://api.vercel.com/v4/domains/{}/records?limit=250", domain);
     let res = ureq::get(&uri)
         .set("Authorization", &format!("Bearer {}", token))
         .call();
