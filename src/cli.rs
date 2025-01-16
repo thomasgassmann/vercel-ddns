@@ -5,7 +5,7 @@ use public_ip::{dns, BoxToResolver, ToResolver};
 use structopt::clap::{arg_enum, AppSettings};
 use structopt::StructOpt;
 
-use crate::vercel::{add_dns_record, Record};
+use crate::vercel::{add_dns_record, update_dns_record, get_dns_records, Record};
 
 fn get_public_ips(ip_types: &Vec<IpType>) -> Result<Vec<(IpType, String)>> {
     let mut res: Vec<(IpType, String)> = Vec::new();
@@ -70,6 +70,7 @@ pub fn run(args: Args) -> Result<()> {
         }
     };
 
+    let existing = get_dns_records(&args.domain, &args.token)?;
     for subdomain in args.subdomain.iter() {
         for (ip_type, ip) in ips.iter() {
             let rec = Record::new(
@@ -81,14 +82,35 @@ pub fn run(args: Args) -> Result<()> {
                 },
                 args.ttl,
             );
-        
-            match add_dns_record(&args.domain, &args.token, rec) {
-                Ok(_) => {
-                    info!("Record added / updated sucessfully");
+
+            let current = existing.iter().find(|p| p.name.eq(subdomain));
+            if current.is_some() {
+                let record_id = match current.and_then(|c| c.id.clone()) {
+                    Some(id) => id.clone(),
+                    None => {
+                        error!("Record ID is missing for subdomain {}", subdomain);
+                        return Ok(());
+                    }
+                };
+
+                match update_dns_record(&args.domain, &args.token, record_id, rec) {
+                    Ok(_) => {
+                        info!("Record updated successfully");
+                    }
+                    Err(e) => {
+                        error!("Unable to update the record. {}", e.to_string());
+                        return Ok(());
+                    }
                 }
-                Err(e) => {
-                    error!("Unable to add / update the record. {}", e.to_string());
-                    return Ok(());
+            } else {
+                match add_dns_record(&args.domain, &args.token, rec) {
+                    Ok(_) => {
+                        info!("Record added successfully");
+                    }
+                    Err(e) => {
+                        error!("Unable to add the record. {}", e.to_string());
+                        return Ok(());
+                    }
                 }
             }
         }

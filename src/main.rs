@@ -8,7 +8,7 @@ use simplelog::{Config, SimpleLogger};
 use structopt::StructOpt;
 
 fn main() -> Result<()> {
-    SimpleLogger::init(LevelFilter::Error, Config::default())?;
+    SimpleLogger::init(LevelFilter::Info, Config::default())?;
 
     let args = Args::from_args();
 

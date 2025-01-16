@@ -1,6 +1,8 @@
-use eyre::Result;
+use eyre::{Report, Result};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use ureq::Response;
+
 #[derive(Error, Debug)]
 pub enum VercelError {
     #[error("Unauthorized credentials. Check your Vercel token.")]
@@ -12,16 +14,16 @@ pub enum VercelError {
 }
 #[derive(Debug, Deserialize)]
 struct Root {
-    pub pagination: Pagination,
+    // pub pagination: Pagination,
     pub records: Vec<Record>,
 }
 
-#[derive(Debug, Deserialize)]
-struct Pagination {
-    pub count: i64,
-    pub next: i64,
-    pub prev: i64,
-}
+// #[derive(Debug, Deserialize)]
+// struct Pagination {
+//     pub count: i64,
+//     pub next: i64,
+//     pub prev: i64,
+// }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Record {
@@ -75,7 +77,6 @@ struct VercelDNSError {
     pub message: String,
 }
 
-#[allow(dead_code)]
 pub fn get_dns_records(domain: &str, token: &str) -> Result<Vec<Record>> {
     let uri = format!("https://api.vercel.com/v4/domains/{}/records", domain);
     let res = ureq::get(&uri)
@@ -100,6 +101,17 @@ pub fn get_dns_records(domain: &str, token: &str) -> Result<Vec<Record>> {
     }
 }
 
+pub fn update_dns_record(domain: &str, token: &str, id: String, new_record: Record) -> Result<()> {
+    let uri = format!("https://api.vercel.com/v1/domains/records/{}", id);
+    let mut req = ureq::patch(&uri)
+        .set("Content-Type", "application/json")
+        .set("Authorization", &format!("Bearer {}", token))
+        .build();
+    let res = req.send_string(&serde_json::to_string(&new_record)?);
+
+    handle_response(domain, &res)?
+}
+
 pub fn add_dns_record(domain: &str, token: &str, record: Record) -> Result<()> {
     let uri = format!("https://api.vercel.com/v2/domains/{}/records", domain);
     let mut req = ureq::post(&uri)
@@ -108,50 +120,39 @@ pub fn add_dns_record(domain: &str, token: &str, record: Record) -> Result<()> {
         .build();
     let res = req.send_string(&serde_json::to_string(&record)?);
 
-    match res.status() {
+    handle_response(domain, &res)?
+}
+
+fn handle_response(domain: &str, res: &Response) -> Result<Result<()>, Report> {
+    Ok(match res.status() {
         200 => Ok(()),
         403 => Err(VercelError::Unauthorized {}.into()),
         404 => Err(VercelError::MissingDomain {
             domain: domain.to_string(),
         }
-        .into()),
+            .into()),
         _ => {
-            let error = serde_json::from_str::<VercelErrorResponse>(&res.into_string()?)?.error;
+            let error = serde_json::from_str::<VercelErrorResponse>(&res.status_text())?.error;
             Err(VercelError::Unknown {
                 code: error.code,
                 message: error.message,
             }
-            .into())
+                .into())
         }
-    }
+    })
 }
 
 #[allow(dead_code)]
-pub fn delete_dns_record(domain: &str, token: &str, record: Record) -> Result<()> {
+pub fn delete_dns_record(domain: &str, token: &str, record_id: String) -> Result<()> {
     let uri = format!(
         "https://api.vercel.com/v2/domains/{}/records/{}",
         domain,
-        record.id.expect("Record did not have an ID.")
+        record_id
     );
 
     let res = ureq::get(&uri)
         .set("Authorization", &format!("Bearer {}", token))
         .call();
 
-    match res.status() {
-        200 => Ok(()),
-        403 => Err(VercelError::Unauthorized {}.into()),
-        404 => Err(VercelError::MissingDomain {
-            domain: domain.to_string(),
-        }
-        .into()),
-        _ => {
-            let error = serde_json::from_str::<VercelErrorResponse>(&res.into_string()?)?.error;
-            Err(VercelError::Unknown {
-                code: error.code,
-                message: error.message,
-            }
-            .into())
-        }
-    }
+    handle_response(domain, &res)?
 }
