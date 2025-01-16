@@ -83,7 +83,7 @@ pub fn run(args: Args) -> Result<()> {
                 args.ttl,
             );
 
-            let current = existing.iter().find(|p| p.name.eq(subdomain));
+            let current = existing.iter().find(|p| p.name.eq(subdomain) && p.dns_type.eq(&rec.dns_type));
             if current.is_some() {
                 let record_id = match current.and_then(|c| c.id.clone()) {
                     Some(id) => id.clone(),
