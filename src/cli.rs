@@ -84,9 +84,14 @@ pub fn run(args: Args) -> Result<()> {
             );
 
             let current = existing.iter().find(|p| p.name.eq(subdomain) && p.dns_type.eq(&rec.dns_type));
-            if current.is_some() {
-                let record_id = match current.and_then(|c| c.id.clone()) {
-                    Some(id) => id.clone(),
+            if let Some(current_record) = current {
+                if current_record.value.eq_ignore_ascii_case(&rec.value) && current_record.ttl == rec.ttl {
+                    info!("Record for {} ({}) is already up to date, skipping", subdomain, rec.dns_type);
+                    continue;
+                }
+
+                let record_id = match current_record.id.clone() {
+                    Some(id) => id,
                     None => {
                         error!("Record ID is missing for subdomain {}", subdomain);
                         return Ok(());
