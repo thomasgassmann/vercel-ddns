@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ddnser
+      POSTGRES_PASSWORD: ddnser
+      POSTGRES_DB: ddnser
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ddnser -d ddnser"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  dex:
+    image: dexidp/dex:v2.45.1
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./dev/dex.yaml:/etc/dex/config.yaml:ro
+
+volumes:
+  pgdata:

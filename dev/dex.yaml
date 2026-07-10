@@ -1,0 +1,24 @@
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - id: ddnser
+    secret: dev-secret
+    name: ddnser
+    redirectURIs:
+      - http://localhost/auth/callback
+      - http://localhost:8080/auth/callback
+
+# Auto-login test user (kilgore@kilgore.trout, groups: [authors]).
+connectors:
+  - type: mockCallback
+    id: mock
+    name: Auto-login (dev)

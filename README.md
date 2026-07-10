@@ -1,64 +1,40 @@
-# vercel-ddns
+# ddnser
 
-vercel-ddns is a simple command line tool for creating a DNS record for Vercel's Managed DNS service.
+Dynamic DNS daemon (pronounced *denser*) for domains whose DNS is managed by
+[Vercel](https://vercel.com/docs/rest-api/reference/endpoints/dns). It keeps A/AAAA
+records pointed at your home network:
 
-> Note: this is my personal fork of the `vercel-ddns` utility, which among other things allows specifying multiple subdomains and IP types during a single execution.
+- **Router webhook** — a dyndns2-compatible `GET /nic/update` endpoint your router
+  calls whenever its public IP changes (tested against the Zyxel EX5301 "DNS user
+  defined" mode).
+- **Periodic sync** — a full reconciliation every `DDNSER_SYNC_INTERVAL` seconds
+  (default hourly), so records heal even if the webhook never fires.
+- **Web UI** — an OIDC-protected admin interface (React + MUI) to manage the DNS
+  entries stored in Postgres, see sync status, and trigger a manual sync.
 
-## Usage
+The apex domain for each FQDN is resolved automatically against the domains on the
+Vercel account. Sync only upserts records it manages; deleting an entry in the UI
+also deletes the record at Vercel.
 
-### cli
-
-```sh
-vercel-ddns 0.1.0
-
-
-USAGE:
-    vercel-ddns [OPTIONS] --domain <domain> --subdomain <subdomain> --token <token>
-
-FLAGS:
-    -h, --help       Prints help information
-    -V, --version    Prints version information
-
-OPTIONS:
-    -d, --domain <domain>           [env: VDDNS_DOMAIN=]
-    -i, --ip-type <ip-type>         [env: VDDNS_IP_TYPE=]  [default: ipv4]  [possible values: IPV4,
-                                   IPV6]
-    -s, --subdomain <subdomain>     [env: VDDNS_SUBDOMAIN=]
-    -t, --token <token>             [env: VERCEL_TOKEN=]
-        --ttl <ttl>                 [env: VDDNS_TTL=]  [default: 3600]
-```
-
-### docker
 
 ```sh
-docker run -d \
-    -e VERCEL_TOKEN=<YOUR_TOKEN> \
-    -e VDDNS_DOMAIN=<example.com> \
-    -e VDDNS_SUBDOMAIN=<sample> \
-    -e VDDNS_TTL=3600 `#optional` \
-    -e VDDNS_IP_TYPE=ipv4 `#optional` \
-    -e CRON_SCHEDULE="*/15 * * * *" `#optional` \
-    krosf/vercel-ddns:cronjob
+## Development
+
+```sh
+./dev.sh frontend   # postgres + dex (mock OIDC) in docker, vite HMR, app via cargo
+./dev.sh backend    # same, but serving the embedded production frontend build
 ```
 
-### docker-compose
+dev.sh binds port 80 by default so a real router on the LAN can call the
+webhook (one sudo prompt to `setcap` the binary after each rebuild); run with
+`DDNSER_PORT=8080` to skip that. Open http://localhost and sign in (dex
+auto-login test user). Simulate the router with:
 
-```yml
-version: "3.7"
-services:
-    ddns:
-        image: krosf/vercel-ddns:cronjob
-        restart: unless-stopped
-        environment:
-            - VERCEL_TOKEN=<YOUR_TOKEN>
-            - VDDNS_DOMAIN=<example.com>
-            - VDDNS_SUBDOMAIN=<sample>
-            - VDDNS_TTL=3600 #optional
-            - VDDNS_IP_TYPE=ipv4 #optional
-            - CRON_SCHEDULE="*/15 * * * *" #optional
+```sh
+curl -u router:router "http://localhost/nic/update?hostname=ignored&myip=8.8.8.8"
 ```
 
-## Related
+## Credits
 
-Check out [lukehsiao/netlify-ddns-rs](https://github.com/lukehsiao/netlify-ddns-rs) for a similar
-client for Netlify.
+Originally forked from [krosf/vercel-ddns](https://github.com/krosf/vercel-ddns)
+(MIT), a one-shot CLI updater; rewritten as a daemon.

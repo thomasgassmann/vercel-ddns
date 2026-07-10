@@ -1,3 +1,5 @@
 /target
 .idea/
-
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
