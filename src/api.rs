@@ -123,8 +123,8 @@ pub(crate) fn validate(mut input: RecordInput) -> Result<RecordInput, &'static s
             }
             _ => unreachable!("record types are validated above"),
         };
-    } else if !matches!(kind, "A" | "AAAA") {
-        return Err("only A and AAAA can be dynamic");
+    } else if kind != "A" {
+        return Err("only A records can be dynamic");
     }
     Ok(input)
 }

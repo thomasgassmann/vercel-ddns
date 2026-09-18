@@ -30,7 +30,6 @@ export interface SyncOutcome {
     started_at: string;
     finished_at: string;
     ipv4: string | null;
-    ipv6: string | null;
     created: number;
     updated: number;
     unchanged: number;

@@ -100,7 +100,6 @@ pub async fn nic_update(
     let ip = outcome
         .ipv4
         .clone()
-        .or_else(|| outcome.ipv6.clone())
         .unwrap_or_default();
     let status = if outcome.changed() { "good" } else { "nochg" };
     let body = format!("{status} {ip}").trim_end().to_string();

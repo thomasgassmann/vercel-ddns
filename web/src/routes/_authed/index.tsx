@@ -69,7 +69,6 @@ function StatusCard() {
                         <Typography variant="body2">Last sync: {describeSync(last)}</Typography>
                         <Stack direction="row" spacing={1}>
                             {last.ipv4 && <Chip size="small" label={`IPv4 ${last.ipv4}`} />}
-                            {last.ipv6 && <Chip size="small" label={`IPv6 ${last.ipv6}`} />}
                             <Chip
                                 size="small"
                                 color={last.failed > 0 || last.error ? "error" : "success"}

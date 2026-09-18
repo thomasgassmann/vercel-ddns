@@ -24,7 +24,7 @@ const TYPES: RecordType[] = ["A", "AAAA", "CAA", "CNAME", "MX", "TXT", "SRV"];
 
 const PLACEHOLDERS: Partial<Record<RecordType, string>> = {
     A: "Leave empty to use the router's public IPv4",
-    AAAA: "Leave empty to use this host's public IPv6",
+    AAAA: "2001:db8::1",
     CAA: "0 issue letsencrypt.org",
     CNAME: "target.example.com",
     MX: "mail.example.com",
@@ -42,7 +42,7 @@ export default function RecordDialog({ open, record, onClose }: Props) {
     const [weight, setWeight] = useState(record?.weight?.toString() ?? "");
     const [port, setPort] = useState(record?.port?.toString() ?? "");
 
-    const isAddress = recordType === "A" || recordType === "AAAA";
+    const isDynamicA = recordType === "A";
     const needsPriority = recordType === "MX" || recordType === "SRV";
     const needsSrvData = recordType === "SRV";
 
@@ -60,7 +60,7 @@ export default function RecordDialog({ open, record, onClose }: Props) {
         save.mutate({
             fqdn: fqdn.trim(),
             record_type: recordType,
-            value: isAddress && !value.trim() ? null : recordType === "TXT" ? value : value.trim(),
+            value: isDynamicA && !value.trim() ? null : recordType === "TXT" ? value : value.trim(),
             ttl: Number(ttl),
             priority: needsPriority ? Number(priority) : null,
             weight: recordType === "SRV" ? Number(weight) : null,
@@ -103,7 +103,7 @@ export default function RecordDialog({ open, record, onClose }: Props) {
                         placeholder={PLACEHOLDERS[recordType]}
                         value={value}
                         onChange={(e) => setValue(e.target.value)}
-                        required={!isAddress}
+                        required={!isDynamicA}
                         fullWidth
                     />
                     {needsPriority && (
@@ -173,7 +173,7 @@ function valueLabel(type: RecordType): string {
         case "A":
             return "IPv4 address (optional)";
         case "AAAA":
-            return "IPv6 address (optional)";
+            return "IPv6 address";
         case "CAA":
             return "CAA value (flags tag value)";
         case "TXT":

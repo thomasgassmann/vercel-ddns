@@ -37,7 +37,6 @@ pub struct SyncRun {
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
     pub ipv4: Option<String>,
-    pub ipv6: Option<String>,
     pub created: i32,
     pub updated: i32,
     pub unchanged: i32,
@@ -124,6 +123,20 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn clear_provider_id(&self, id: i64) -> Result<(), sqlx::Error> {
+        let result = sqlx::query(
+            "UPDATE records SET zone_id = NULL, provider_record_id = NULL, updated_at = now()
+             WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() != 1 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        Ok(())
+    }
+
     pub async fn delete(&self, id: i64) -> Result<bool, sqlx::Error> {
         let result = sqlx::query("DELETE FROM records WHERE id=$1")
             .bind(id)
@@ -135,11 +148,11 @@ impl Storage {
     pub async fn save_sync_run(&self, run: &SyncRun) -> Result<(), sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
         sqlx::query(
-            "INSERT INTO sync_runs (source, started_at, finished_at, ipv4, ipv6, created, updated, unchanged, failed, error)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+            "INSERT INTO sync_runs (source, started_at, finished_at, ipv4, created, updated, unchanged, failed, error)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
         )
         .bind(&run.source).bind(run.started_at).bind(run.finished_at)
-        .bind(&run.ipv4).bind(&run.ipv6).bind(run.created).bind(run.updated)
+        .bind(&run.ipv4).bind(run.created).bind(run.updated)
         .bind(run.unchanged).bind(run.failed).bind(&run.error)
         .execute(&mut *transaction).await?;
         sqlx::query("DELETE FROM sync_runs WHERE finished_at < now() - interval '30 days'")
@@ -149,7 +162,7 @@ impl Storage {
     }
 
     pub async fn latest_sync_run(&self) -> Result<Option<SyncRun>, sqlx::Error> {
-        sqlx::query_as("SELECT source, started_at, finished_at, ipv4, ipv6, created, updated, unchanged, failed, error FROM sync_runs ORDER BY finished_at DESC, id DESC LIMIT 1")
+        sqlx::query_as("SELECT source, started_at, finished_at, ipv4, created, updated, unchanged, failed, error FROM sync_runs ORDER BY finished_at DESC, id DESC LIMIT 1")
             .fetch_optional(&self.pool).await
     }
 }

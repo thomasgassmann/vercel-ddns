@@ -17,7 +17,6 @@ pub struct SyncOutcome {
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
     pub ipv4: Option<String>,
-    pub ipv6: Option<String>,
     pub created: u32,
     pub updated: u32,
     pub unchanged: u32,
@@ -32,7 +31,6 @@ impl SyncOutcome {
             started_at: self.started_at,
             finished_at: self.finished_at,
             ipv4: self.ipv4.clone(),
-            ipv6: self.ipv6.clone(),
             created: self.created as i32,
             updated: self.updated as i32,
             unchanged: self.unchanged as i32,
@@ -281,29 +279,56 @@ async fn reconcile(
         if record.zone_id.as_deref() != Some(zone) {
             return Err("provider zone changed".into());
         }
-        let current = existing
-            .iter()
-            .find(|r| r.id == *id)
-            .ok_or("provider record missing; refusing automatic replacement")?;
-        if !identity_matches(record, current) {
-            return Err("provider record identity changed".into());
-        }
-        if content_matches(record, value, current)
-            && current.ttl == record.ttl as u32
-            && !current.proxied
-        {
-            "unchanged"
-        } else {
-            let remote = cloudflare
-                .update_record(zone, id, &desired(record, value))
-                .await
-                .map_err(|e| e.to_string())?;
-            if remote.id != *id || !identity_matches(record, &remote) {
-                return Err("unexpected updated record identity".into());
+        let current = existing.iter().find(|r| r.id == *id);
+        match current {
+            None => {
+                // Provider record was deleted externally (e.g. from the
+                // Cloudflare dashboard).  Clear the stale ID and recreate.
+                tracing::info!(
+                    record_id = record.id,
+                    provider_id = %id,
+                    "provider record missing; clearing stale ID and recreating"
+                );
+                storage
+                    .clear_provider_id(record.id)
+                    .await
+                    .map_err(|_| "could not clear stale provider ID")?;
+                let remote = cloudflare
+                    .create_record(zone, &desired(record, value))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if remote.id.is_empty() || !identity_matches(record, &remote) {
+                    return Err("unexpected created record identity".into());
+                }
+                storage
+                    .set_provider_id(record.id, zone, &remote.id)
+                    .await
+                    .map_err(|_| "created record ID could not be saved")?;
+                existing.push(remote);
+                "created"
             }
-            let index = existing.iter().position(|r| r.id == *id).unwrap();
-            existing[index] = remote;
-            "updated"
+            Some(current) => {
+                if !identity_matches(record, current) {
+                    return Err("provider record identity changed".into());
+                }
+                if content_matches(record, value, current)
+                    && current.ttl == record.ttl as u32
+                    && !current.proxied
+                {
+                    "unchanged"
+                } else {
+                    let remote = cloudflare
+                        .update_record(zone, id, &desired(record, value))
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    if remote.id != *id || !identity_matches(record, &remote) {
+                        return Err("unexpected updated record identity".into());
+                    }
+                    let index = existing.iter().position(|r| r.id == *id).unwrap();
+                    existing[index] = remote;
+                    "updated"
+                }
+            }
         }
     } else if let Some(remote) = existing.iter().find(|remote| {
         identity_matches(record, remote)
@@ -345,7 +370,6 @@ async fn run_sync(
         started_at: now,
         finished_at: now,
         ipv4: None,
-        ipv6: None,
         created: 0,
         updated: 0,
         unchanged: 0,
@@ -365,17 +389,10 @@ async fn run_sync(
                 .await
                 .map(|ip| ip.to_string());
         }
-        if records
-            .iter()
-            .any(|r| r.record_type == "AAAA" && r.value.is_none())
-        {
-            outcome.ipv6 = ip::resolve_host_ipv6().await.map(|ip| ip.to_string());
-        }
         let zones = cloudflare.list_zones().await.map_err(|e| e.to_string())?;
         let mut cache = std::collections::HashMap::new();
         for record in &records {
-            let dynamic =
-                matches!(record.record_type.as_str(), "A" | "AAAA") && record.value.is_none();
+            let dynamic = record.record_type == "A" && record.value.is_none();
             if matches!(request.source, "timer" | "webhook") && !dynamic {
                 outcome.unchanged += 1;
                 continue;
@@ -384,10 +401,10 @@ async fn run_sync(
                 let value = record
                     .value
                     .as_deref()
-                    .or(match record.record_type.as_str() {
-                        "A" => outcome.ipv4.as_deref(),
-                        "AAAA" => outcome.ipv6.as_deref(),
-                        _ => None,
+                    .or(if record.record_type == "A" {
+                        outcome.ipv4.as_deref()
+                    } else {
+                        None
                     })
                     .ok_or("dynamic address unavailable")?;
                 let zone = zones

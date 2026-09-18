@@ -1,24 +1,18 @@
-import DnsIcon from "@mui/icons-material/Dns";
-import Button from "@mui/material/Button";
-import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { meQuery } from "../api";
 
 export const Route = createFileRoute("/login")({
-    component: Login,
-});
+    beforeLoad: async ({ context }) => {
+        try {
+            await context.queryClient.ensureQueryData(meQuery);
+            throw redirect({ to: "/" });
+        } catch (error) {
+            if (error instanceof Response) {
+                throw error;
+            }
 
-function Login() {
-    return (
-        <Stack
-            spacing={3}
-            sx={{ minHeight: "80vh", alignItems: "center", justifyContent: "center" }}
-        >
-            <DnsIcon sx={{ fontSize: 72 }} color="primary" />
-            <Typography variant="h4">ddnser</Typography>
-            <Button variant="contained" href="/auth/login">
-                Sign in
-            </Button>
-        </Stack>
-    );
-}
+            // Start the server-side IdP flow rather than navigating within the SPA.
+            throw redirect({ href: "/auth/login", reloadDocument: true, replace: true });
+        }
+    },
+});

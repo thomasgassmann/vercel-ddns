@@ -146,7 +146,6 @@ mod tests {
             started_at: Utc.timestamp_opt(100, 0).unwrap(),
             finished_at: Utc.timestamp_opt(102, 500_000_000).unwrap(),
             ipv4: Some("198.51.100.1".into()),
-            ipv6: None,
             created: 1,
             updated: 2,
             unchanged: 3,
