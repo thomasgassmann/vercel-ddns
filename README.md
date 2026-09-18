@@ -119,6 +119,37 @@ The integration test covers reuse-or-create reconciliation and verifies that
 later edits update the exact Cloudflare record ID rather than creating a second
 record.
 
+## Manual image publishing
+
+`scripts/publish.sh` builds ddnser for `linux/amd64` from one clean, tagged Git
+snapshot. It publishes to the private Harbor `ddnser` project. Docker with
+Buildx and the 1Password CLI must be installed; publishing requires LAN or VPN
+access to `registry.gsmn.dev` and access to the `homelab` vault. The
+`robot$ddnser-push` account must already exist in Harbor, with its password
+stored as `op://homelab/harbor-ddnser-push/password`.
+
+The base images are pinned by digest and application dependencies by lockfile.
+The runtime image runs as UID/GID 10001 and contains only the application
+binary and CA certificates.
+
+After reviewing and committing a release, create a new version tag yourself:
+
+```sh
+git tag v0.1.0
+git push origin HEAD v0.1.0
+./scripts/publish.sh --build-only v0.1.0
+./scripts/publish.sh v0.1.0
+```
+
+The build-only command neither reads credentials nor pushes. Publishing reads
+the robot password directly into Docker's stdin. Docker's temporary credential
+directory is deleted on exit. The script never creates commits or tags, stages
+files, or publishes a `latest` tag.
+
+The resulting image is `registry.gsmn.dev/ddnser/ddnser:0.1.0`. It carries the
+Git revision in its OCI labels. Use the digest printed by Docker when pinning
+the deployment. Never reuse a published version for a different commit.
+
 ## Credits
 
 Originally forked from [krosf/vercel-ddns](https://github.com/krosf/vercel-ddns)
