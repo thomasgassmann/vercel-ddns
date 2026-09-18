@@ -1,28 +1,28 @@
-FROM node:24-alpine AS web
+FROM node:24-alpine@sha256:f1bf1b113e23ef6ea9d04fa0f15e374682fb2dcccce887c35383bd3f722a57d2 AS web
 WORKDIR /web
 COPY web/package.json web/pnpm-lock.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY web ./
 RUN pnpm build
 
-FROM rust:1-alpine AS planner
+FROM rust:1.96.1-alpine@sha256:a41f7740f8b45d45795624eec13a8b42263cc700f19f7e4e86e04d3dda08a479 AS planner
 RUN apk add --no-cache musl-dev && cargo install cargo-chef
 WORKDIR /build
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM rust:1-alpine AS builder
+FROM rust:1.96.1-alpine@sha256:a41f7740f8b45d45795624eec13a8b42263cc700f19f7e4e86e04d3dda08a479 AS builder
 RUN apk add --no-cache musl-dev && cargo install cargo-chef
 WORKDIR /build
 COPY --from=planner /build/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 COPY --from=web /web/dist web/dist
-RUN cargo build --release
+RUN cargo build --release && strip target/release/ddnser
 
 FROM scratch
-# reqwest 0.13's rustls uses the platform verifier, so ship a CA bundle.
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /build/target/release/ddnser /ddnser
+USER 10001:10001
 EXPOSE 8080
 ENTRYPOINT ["/ddnser"]
