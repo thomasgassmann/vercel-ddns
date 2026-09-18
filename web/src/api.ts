@@ -1,26 +1,28 @@
 import { queryOptions } from "@tanstack/react-query";
 
-export interface Entry {
+export type RecordType = "A" | "AAAA" | "CAA" | "CNAME" | "MX" | "TXT" | "SRV";
+
+export interface DnsRecord {
     id: number;
     fqdn: string;
-    ipv4: boolean;
-    ipv6: boolean;
+    record_type: RecordType;
+    value: string | null;
     ttl: number;
-    ipv6_override: string | null;
-    last_synced_ipv4: string | null;
-    last_synced_ipv4_at: string | null;
-    last_synced_ipv6: string | null;
-    last_synced_ipv6_at: string | null;
+    priority: number | null;
+    weight: number | null;
+    port: number | null;
     created_at: string;
     updated_at: string;
 }
 
-export interface EntryInput {
+export interface RecordInput {
     fqdn: string;
-    ipv4: boolean;
-    ipv6: boolean;
+    record_type: RecordType;
+    value: string | null;
     ttl: number;
-    ipv6_override: string | null;
+    priority: number | null;
+    weight: number | null;
+    port: number | null;
 }
 
 export interface SyncOutcome {
@@ -75,11 +77,11 @@ export const api = {
     me: () => request<Session>("/api/me"),
     logout: () => request<void>("/auth/logout", { method: "POST" }),
 
-    entries: () => request<Entry[]>("/api/entries"),
-    createEntry: (input: EntryInput) => request<Entry>("/api/entries", json("POST", input)),
-    updateEntry: (id: number, input: EntryInput) =>
-        request<Entry>(`/api/entries/${id}`, json("PUT", input)),
-    deleteEntry: (id: number) => request<void>(`/api/entries/${id}`, json("DELETE")),
+    records: () => request<DnsRecord[]>("/api/records"),
+    createRecord: (input: RecordInput) => request<DnsRecord>("/api/records", json("POST", input)),
+    updateRecord: (id: number, input: RecordInput) =>
+        request<DnsRecord>(`/api/records/${id}`, json("PUT", input)),
+    deleteRecord: (id: number) => request<void>(`/api/records/${id}`, json("DELETE")),
 
     status: () => request<Status>("/api/status"),
     syncNow: () => request<SyncOutcome>("/api/sync", json("POST")),
@@ -92,7 +94,7 @@ export const meQuery = queryOptions({
     retry: false,
 });
 
-export const entriesQuery = queryOptions({ queryKey: ["entries"], queryFn: api.entries });
+export const recordsQuery = queryOptions({ queryKey: ["records"], queryFn: api.records });
 
 export const statusQuery = queryOptions({
     queryKey: ["status"],

@@ -5,23 +5,23 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
-import type { Entry } from "../api";
+import type { DnsRecord } from "../api";
 
 interface Props {
-    entry: Entry | null;
+    record: DnsRecord | null;
     pending: boolean;
     error: string | null;
     onCancel: () => void;
     onConfirm: () => void;
 }
 
-export default function ConfirmDelete({ entry, pending, error, onCancel, onConfirm }: Props) {
+export default function ConfirmDelete({ record, pending, error, onCancel, onConfirm }: Props) {
     return (
-        <Dialog open={entry !== null} onClose={onCancel}>
-            <DialogTitle>Delete {entry?.fqdn}?</DialogTitle>
+        <Dialog open={record !== null} onClose={onCancel}>
+            <DialogTitle>Delete {record?.fqdn}?</DialogTitle>
             <DialogContent>
                 <DialogContentText>
-                    This removes the entry and deletes its DNS records at Vercel.
+                    This removes the record from ddnser and from Cloudflare.
                 </DialogContentText>
                 {error && (
                     <Alert severity="error" sx={{ mt: 1 }}>

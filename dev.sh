@@ -20,8 +20,10 @@ export DDNSER_ADMIN_GROUP=${DDNSER_ADMIN_GROUP:-authors}
 export DDNSER_SESSION_SECRET=${DDNSER_SESSION_SECRET:-dev-session-secret-at-least-32-chars}
 export DDNSER_WEBHOOK_USERNAME=${DDNSER_WEBHOOK_USERNAME:-router}
 export DDNSER_WEBHOOK_PASSWORD=${DDNSER_WEBHOOK_PASSWORD:-router}
-# Syncs fail against Vercel until you export a real token; the UI still works.
-export VERCEL_TOKEN=${VERCEL_TOKEN:-invalid-dev-token}
+# Syncs fail against Cloudflare until you export a real token; the UI still works.
+export DDNSER_CLOUDFLARE_TOKEN=${DDNSER_CLOUDFLARE_TOKEN:-invalid-dev-token}
+export DDNSER_METRICS_BIND=${DDNSER_METRICS_BIND:-127.0.0.1}
+export DDNSER_METRICS_PORT=${DDNSER_METRICS_PORT:-9091}
 export RUST_LOG=${RUST_LOG:-info,sqlx::query=debug}
 
 run() {
@@ -51,10 +53,18 @@ case "${1:-}" in
     pnpm --dir web run build
     run
     ;;
+  test)
+    trap 'docker compose down' EXIT
+    docker compose up -d --wait
+    pnpm --dir web install
+    pnpm --dir web run build
+    DDNSER_TEST_DATABASE_URL="$DDNSER_DATABASE_URL" cargo test "$@"
+    ;;
   *)
-    echo "Usage: dev.sh {frontend|backend}" >&2
+    echo "Usage: dev.sh {frontend|backend|test} [cargo test args...]" >&2
     echo "  frontend  postgres+dex in docker, vite dev server with HMR, app via cargo" >&2
     echo "  backend   postgres+dex in docker, embedded frontend build, app via cargo" >&2
+    echo "  test      postgres+dex in docker, cargo test, then tear down" >&2
     exit 1
     ;;
 esac

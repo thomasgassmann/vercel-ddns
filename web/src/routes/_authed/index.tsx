@@ -14,43 +14,26 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { api, entriesQuery, statusQuery, type Entry, type SyncOutcome } from "../../api";
+import { api, recordsQuery, statusQuery, type DnsRecord, type SyncOutcome } from "../../api";
 import ConfirmDelete from "../../components/ConfirmDelete";
-import EntryDialog from "../../components/EntryDialog";
+import RecordDialog from "../../components/RecordDialog";
 
 export const Route = createFileRoute("/_authed/")({
     loader: ({ context }) => {
-        void context.queryClient.prefetchQuery(entriesQuery);
+        void context.queryClient.prefetchQuery(recordsQuery);
         void context.queryClient.prefetchQuery(statusQuery);
     },
     component: Home,
 });
 
-function SyncedIp({ ip, at, show }: { ip: string | null; at: string | null; show: boolean }) {
-    if (!show) {
-        return null;
-    }
-
-    if (!ip) {
-        return <span>never</span>;
-    }
-
-    return (
-        <Tooltip title={at ? new Date(at).toLocaleString() : ""}>
-            <span>{ip}</span>
-        </Tooltip>
-    );
-}
-
 function describeSync(sync: SyncOutcome): string {
     const finished = new Date(sync.finished_at).toLocaleString();
     const counts = `${sync.created} created, ${sync.updated} updated, ${sync.unchanged} unchanged, ${sync.failed} failed`;
-    return `${finished} (${sync.source}) — ${counts}`;
+    return `${finished} (${sync.source}) - ${counts}`;
 }
 
 function StatusCard() {
@@ -60,7 +43,7 @@ function StatusCard() {
         mutationFn: api.syncNow,
         onSettled: async () => {
             await queryClient.invalidateQueries({ queryKey: ["status"] });
-            await queryClient.invalidateQueries({ queryKey: ["entries"] });
+            await queryClient.invalidateQueries({ queryKey: ["records"] });
         },
     });
 
@@ -114,18 +97,18 @@ function StatusCard() {
 }
 
 function Home() {
-    const { data: entries } = useSuspenseQuery(entriesQuery);
+    const { data: records } = useSuspenseQuery(recordsQuery);
     const queryClient = useQueryClient();
-    const [dialog, setDialog] = useState<{ open: boolean; entry: Entry | null }>({
+    const [dialog, setDialog] = useState<{ open: boolean; record: DnsRecord | null }>({
         open: false,
-        entry: null,
+        record: null,
     });
-    const [deleting, setDeleting] = useState<Entry | null>(null);
+    const [deleting, setDeleting] = useState<DnsRecord | null>(null);
 
     const remove = useMutation({
-        mutationFn: (id: number) => api.deleteEntry(id),
+        mutationFn: (id: number) => api.deleteRecord(id),
         onSuccess: async () => {
-            await queryClient.invalidateQueries({ queryKey: ["entries"] });
+            await queryClient.invalidateQueries({ queryKey: ["records"] });
             setDeleting(null);
         },
     });
@@ -137,80 +120,83 @@ function Home() {
                 <CardContent>
                     <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
                         <Typography variant="h6" sx={{ flexGrow: 1 }}>
-                            DNS entries
+                            DNS records
                         </Typography>
                         <Button
                             variant="contained"
                             startIcon={<AddIcon />}
-                            onClick={() => setDialog({ open: true, entry: null })}
+                            onClick={() => setDialog({ open: true, record: null })}
                         >
-                            Add entry
+                            Add record
                         </Button>
                     </Stack>
                     <Table size="small" sx={{ mt: 2 }}>
                         <TableHead>
                             <TableRow>
                                 <TableCell>FQDN</TableCell>
-                                <TableCell>Records</TableCell>
+                                <TableCell>Type</TableCell>
+                                <TableCell>Value</TableCell>
                                 <TableCell>TTL</TableCell>
-                                <TableCell>IPv6 target</TableCell>
-                                <TableCell>Last synced</TableCell>
                                 <TableCell align="right" />
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {entries.map((entry) => (
-                                <TableRow key={entry.id} hover>
-                                    <TableCell>{entry.fqdn}</TableCell>
+                            {records.map((record) => (
+                                <TableRow key={record.id} hover>
+                                    <TableCell>{record.fqdn}</TableCell>
                                     <TableCell>
                                         <Stack direction="row" spacing={0.5}>
-                                            {entry.ipv4 && <Chip size="small" label="A" />}
-                                            {entry.ipv6 && <Chip size="small" label="AAAA" />}
+                                            <Chip size="small" label={record.record_type} />
                                         </Stack>
                                     </TableCell>
-                                    <TableCell>{entry.ttl}</TableCell>
                                     <TableCell>
-                                        {entry.ipv6
-                                            ? (entry.ipv6_override ?? "this host's IPv6")
-                                            : "—"}
+                                        {record.value ?? <em>dynamic</em>}
+                                        {record.record_type === "SRV" &&
+                                            record.priority !== null && (
+                                                <Typography
+                                                    variant="caption"
+                                                    sx={{ display: "block" }}
+                                                >
+                                                    priority {record.priority}, weight{" "}
+                                                    {record.weight}, port {record.port}
+                                                </Typography>
+                                            )}
+                                        {record.record_type === "MX" &&
+                                            record.priority !== null && (
+                                                <Typography
+                                                    variant="caption"
+                                                    sx={{ display: "block" }}
+                                                >
+                                                    priority {record.priority}
+                                                </Typography>
+                                            )}
                                     </TableCell>
-                                    <TableCell>
-                                        <Stack spacing={0.5}>
-                                            <SyncedIp
-                                                ip={entry.ipv4 ? entry.last_synced_ipv4 : null}
-                                                at={entry.last_synced_ipv4_at}
-                                                show={entry.ipv4}
-                                            />
-                                            <SyncedIp
-                                                ip={entry.ipv6 ? entry.last_synced_ipv6 : null}
-                                                at={entry.last_synced_ipv6_at}
-                                                show={entry.ipv6}
-                                            />
-                                        </Stack>
-                                    </TableCell>
+                                    <TableCell>{record.ttl}</TableCell>
                                     <TableCell align="right">
                                         <IconButton
                                             size="small"
-                                            onClick={() => setDialog({ open: true, entry })}
+                                            onClick={() => setDialog({ open: true, record })}
                                         >
                                             <EditIcon fontSize="small" />
                                         </IconButton>
-                                        <IconButton size="small" onClick={() => setDeleting(entry)}>
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => setDeleting(record)}
+                                        >
                                             <DeleteIcon fontSize="small" />
                                         </IconButton>
                                     </TableCell>
                                 </TableRow>
                             ))}
-                            {entries.length === 0 && (
+                            {records.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={6}>
+                                    <TableCell colSpan={5}>
                                         <Typography
                                             variant="body2"
                                             color="text.secondary"
                                             sx={{ py: 2 }}
                                         >
-                                            No entries yet. Add a domain to keep it pointed at your
-                                            home IP.
+                                            No records yet. Add one to manage it here.
                                         </Typography>
                                     </TableCell>
                                 </TableRow>
@@ -220,14 +206,14 @@ function Home() {
                 </CardContent>
             </Card>
             {dialog.open && (
-                <EntryDialog
+                <RecordDialog
                     open={dialog.open}
-                    entry={dialog.entry}
-                    onClose={() => setDialog({ open: false, entry: null })}
+                    record={dialog.record}
+                    onClose={() => setDialog({ open: false, record: null })}
                 />
             )}
             <ConfirmDelete
-                entry={deleting}
+                record={deleting}
                 pending={remove.isPending}
                 error={remove.isError ? remove.error.message : null}
                 onCancel={() => setDeleting(null)}

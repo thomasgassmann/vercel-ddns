@@ -29,6 +29,35 @@ const SESSION_COOKIE: &str = "session";
 const SESSION_TTL_SECS: u64 = 60 * 60;
 const FLOW_TTL_SECS: u64 = 10 * 60;
 
+/// The __Host- prefix makes the browser enforce Secure + Path=/ + no Domain,
+/// so a subdomain or non-HTTPS origin can never plant one of our cookies.
+/// Browsers reject the prefix without Secure, hence the plain-HTTP fallback.
+fn flow_cookie_name(secure: bool) -> &'static str {
+    if secure {
+        "__Host-oidc_flow"
+    } else {
+        FLOW_COOKIE
+    }
+}
+
+fn session_cookie_name(secure: bool) -> &'static str {
+    if secure {
+        "__Host-session"
+    } else {
+        SESSION_COOKIE
+    }
+}
+
+/// Removal cookie matching the attributes the original was set with; a
+/// __Host- removal must itself carry Secure + Path=/ or browsers drop it.
+fn removal_cookie(name: &'static str, secure: bool) -> Cookie<'static> {
+    Cookie::build((name, ""))
+        .http_only(true)
+        .secure(secure)
+        .path("/")
+        .build()
+}
+
 /// Captures every non-standard ID-token claim so the admin claim is
 /// addressable by its configured name.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -226,7 +255,7 @@ pub async fn login(State(state): State<App>, jar: PrivateCookieJar) -> Response 
     };
     let value = serde_json::to_string(&flow).unwrap();
     let jar = jar.add(cookie(
-        FLOW_COOKIE,
+        flow_cookie_name(state.cookie_secure),
         value,
         state.cookie_secure,
         FLOW_TTL_SECS,
@@ -245,20 +274,21 @@ pub async fn callback(
     jar: PrivateCookieJar,
     Query(query): Query<CallbackQuery>,
 ) -> Response {
+    let secure = state.cookie_secure;
     let Some(flow) = jar
-        .get(FLOW_COOKIE)
+        .get(flow_cookie_name(secure))
         .and_then(|c| serde_json::from_str::<FlowState>(c.value()).ok())
     else {
         return (StatusCode::BAD_REQUEST, "missing or invalid flow cookie").into_response();
     };
-    let jar = jar.remove(FLOW_COOKIE);
+    let jar = jar.remove(removal_cookie(flow_cookie_name(secure), secure));
     match authenticate(&state, flow, query).await {
         Ok(session) => {
             let value = serde_json::to_string(&session).unwrap();
             let jar = jar.add(cookie(
-                SESSION_COOKIE,
+                session_cookie_name(secure),
                 value,
-                state.cookie_secure,
+                secure,
                 SESSION_TTL_SECS,
             ));
             (jar, Redirect::to("/")).into_response()
@@ -336,14 +366,22 @@ async fn authenticate(
     })
 }
 
-pub async fn logout(jar: PrivateCookieJar) -> Response {
-    let removal = Cookie::build((SESSION_COOKIE, "")).path("/").build();
+pub async fn logout(State(state): State<App>, jar: PrivateCookieJar) -> Response {
+    let removal = removal_cookie(
+        session_cookie_name(state.cookie_secure),
+        state.cookie_secure,
+    );
     (jar.remove(removal), StatusCode::NO_CONTENT).into_response()
 }
 
-pub async fn require_session(jar: PrivateCookieJar, mut request: Request, next: Next) -> Response {
+pub async fn require_session(
+    State(state): State<App>,
+    jar: PrivateCookieJar,
+    mut request: Request,
+    next: Next,
+) -> Response {
     let session = jar
-        .get(SESSION_COOKIE)
+        .get(session_cookie_name(state.cookie_secure))
         .and_then(|c| serde_json::from_str::<Session>(c.value()).ok())
         .filter(|s| s.exp > now_secs());
     match session {

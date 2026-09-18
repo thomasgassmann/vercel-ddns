@@ -1,30 +1,48 @@
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct Entry {
+pub struct Record {
     pub id: i64,
     pub fqdn: String,
-    pub ipv4: bool,
-    pub ipv6: bool,
+    pub record_type: String,
+    pub value: Option<String>,
     pub ttl: i64,
-    pub ipv6_override: Option<String>,
-    pub last_synced_ipv4: Option<String>,
-    pub last_synced_ipv4_at: Option<DateTime<Utc>>,
-    pub last_synced_ipv6: Option<String>,
-    pub last_synced_ipv6_at: Option<DateTime<Utc>>,
+    pub priority: Option<i32>,
+    pub weight: Option<i32>,
+    pub port: Option<i32>,
+    pub zone_id: Option<String>,
+    pub provider_record_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-pub struct EntryValues<'a> {
-    pub fqdn: &'a str,
-    pub ipv4: bool,
-    pub ipv6: bool,
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordInput {
+    pub fqdn: String,
+    pub record_type: String,
+    pub value: Option<String>,
     pub ttl: i64,
-    pub ipv6_override: Option<&'a str>,
+    pub priority: Option<i32>,
+    pub weight: Option<i32>,
+    pub port: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct SyncRun {
+    pub source: String,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: DateTime<Utc>,
+    pub ipv4: Option<String>,
+    pub ipv6: Option<String>,
+    pub created: i32,
+    pub updated: i32,
+    pub unchanged: i32,
+    pub failed: i32,
+    pub error: Option<String>,
 }
 
 pub struct Storage {
@@ -38,77 +56,100 @@ impl Storage {
         Ok(Self { pool })
     }
 
-    pub async fn list(&self) -> Result<Vec<Entry>, sqlx::Error> {
-        sqlx::query_as::<_, Entry>("SELECT * FROM entries ORDER BY fqdn")
+    pub async fn list(&self) -> Result<Vec<Record>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM records ORDER BY fqdn, record_type, id")
             .fetch_all(&self.pool)
             .await
     }
 
-    pub async fn get(&self, id: i64) -> Result<Option<Entry>, sqlx::Error> {
-        sqlx::query_as::<_, Entry>("SELECT * FROM entries WHERE id = $1")
+    pub async fn get(&self, id: i64) -> Result<Option<Record>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM records WHERE id = $1")
             .bind(id)
             .fetch_optional(&self.pool)
             .await
     }
 
-    pub async fn create(&self, values: &EntryValues<'_>) -> Result<Entry, sqlx::Error> {
-        sqlx::query_as::<_, Entry>(
-            "INSERT INTO entries (fqdn, ipv4, ipv6, ttl, ipv6_override)
-             VALUES ($1, $2, $3, $4, $5) RETURNING *",
+    pub async fn create(&self, v: &RecordInput) -> Result<Record, sqlx::Error> {
+        sqlx::query_as(
+            "INSERT INTO records (fqdn, record_type, value, ttl, priority, weight, port)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *",
         )
-        .bind(values.fqdn)
-        .bind(values.ipv4)
-        .bind(values.ipv6)
-        .bind(values.ttl)
-        .bind(values.ipv6_override)
+        .bind(&v.fqdn)
+        .bind(&v.record_type)
+        .bind(&v.value)
+        .bind(v.ttl)
+        .bind(v.priority)
+        .bind(v.weight)
+        .bind(v.port)
         .fetch_one(&self.pool)
         .await
     }
 
-    pub async fn update(&self, id: i64, values: &EntryValues<'_>) -> Result<Option<Entry>, sqlx::Error> {
-        sqlx::query_as::<_, Entry>(
-            "UPDATE entries
-             SET fqdn = $2, ipv4 = $3, ipv6 = $4, ttl = $5, ipv6_override = $6,
-                 last_synced_ipv4 = CASE WHEN $3 THEN last_synced_ipv4 END,
-                 last_synced_ipv4_at = CASE WHEN $3 THEN last_synced_ipv4_at END,
-                 last_synced_ipv6 = CASE WHEN $4 THEN last_synced_ipv6 END,
-                 last_synced_ipv6_at = CASE WHEN $4 THEN last_synced_ipv6_at END,
-                 updated_at = now()
-             WHERE id = $1 RETURNING *",
+    pub async fn update(&self, id: i64, v: &RecordInput) -> Result<Option<Record>, sqlx::Error> {
+        // Name and type are immutable: changing either requires a new record.
+        sqlx::query_as(
+            "UPDATE records SET value=$2, ttl=$3, priority=$4, weight=$5, port=$6, updated_at=now()
+             WHERE id=$1 AND fqdn=$7 AND record_type=$8 RETURNING *",
         )
         .bind(id)
-        .bind(values.fqdn)
-        .bind(values.ipv4)
-        .bind(values.ipv6)
-        .bind(values.ttl)
-        .bind(values.ipv6_override)
+        .bind(&v.value)
+        .bind(v.ttl)
+        .bind(v.priority)
+        .bind(v.weight)
+        .bind(v.port)
+        .bind(&v.fqdn)
+        .bind(&v.record_type)
         .fetch_optional(&self.pool)
         .await
     }
 
+    pub async fn set_provider_id(
+        &self,
+        id: i64,
+        zone: &str,
+        provider_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        let result = sqlx::query(
+            "UPDATE records SET zone_id=$2, provider_record_id=$3, updated_at=now()
+             WHERE id=$1 AND provider_record_id IS NULL",
+        )
+        .bind(id)
+        .bind(zone)
+        .bind(provider_id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() != 1 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        Ok(())
+    }
+
     pub async fn delete(&self, id: i64) -> Result<bool, sqlx::Error> {
-        let result = sqlx::query("DELETE FROM entries WHERE id = $1")
+        let result = sqlx::query("DELETE FROM records WHERE id=$1")
             .bind(id)
             .execute(&self.pool)
             .await?;
-        Ok(result.rows_affected() > 0)
+        Ok(result.rows_affected() == 1)
     }
 
-    pub async fn mark_synced(&self, id: i64, record_type: &str, ip: &str) -> Result<(), sqlx::Error> {
-        let query = match record_type {
-            "A" => {
-                "UPDATE entries SET last_synced_ipv4 = $2, last_synced_ipv4_at = now() WHERE id = $1"
-            }
-            "AAAA" => {
-                "UPDATE entries SET last_synced_ipv6 = $2, last_synced_ipv6_at = now() WHERE id = $1"
-            }
-            other => {
-                return Err(sqlx::Error::Protocol(format!(
-                    "mark_synced called with unknown record type {other}"
-                )));
-            }
-        };
-        sqlx::query(query).bind(id).bind(ip).execute(&self.pool).await?;
-        Ok(())
+    pub async fn save_sync_run(&self, run: &SyncRun) -> Result<(), sqlx::Error> {
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query(
+            "INSERT INTO sync_runs (source, started_at, finished_at, ipv4, ipv6, created, updated, unchanged, failed, error)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+        )
+        .bind(&run.source).bind(run.started_at).bind(run.finished_at)
+        .bind(&run.ipv4).bind(&run.ipv6).bind(run.created).bind(run.updated)
+        .bind(run.unchanged).bind(run.failed).bind(&run.error)
+        .execute(&mut *transaction).await?;
+        sqlx::query("DELETE FROM sync_runs WHERE finished_at < now() - interval '30 days'")
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await
+    }
+
+    pub async fn latest_sync_run(&self) -> Result<Option<SyncRun>, sqlx::Error> {
+        sqlx::query_as("SELECT source, started_at, finished_at, ipv4, ipv6, created, updated, unchanged, failed, error FROM sync_runs ORDER BY finished_at DESC, id DESC LIMIT 1")
+            .fetch_optional(&self.pool).await
     }
 }

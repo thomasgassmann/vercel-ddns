@@ -1,10 +1,11 @@
 mod api;
 mod assets;
 mod auth;
+mod cloudflare;
 mod ip;
+mod metrics;
 mod storage;
 mod sync;
-mod vercel;
 mod webhook;
 
 use std::net::SocketAddr;
@@ -15,15 +16,26 @@ use axum::routing::{get, post, put};
 use axum_extra::extract::cookie::Key;
 use clap::Parser;
 
+use crate::cloudflare::Cloudflare;
+use crate::metrics::Metrics;
 use crate::storage::Storage;
 use crate::sync::Syncer;
-use crate::vercel::Vercel;
 
-#[derive(Parser, Debug)]
-#[command(name = "ddnser", about = "Dynamic DNS daemon for Vercel-managed domains")]
+#[derive(Parser)]
+#[command(name = "ddnser", about = "DNS manager for Cloudflare-managed domains")]
 pub struct Args {
     #[arg(long, env = "DDNSER_PORT", default_value_t = 8080)]
     pub port: u16,
+
+    /// Bind address override; the smoke test uses loopback only.
+    #[arg(long, env = "DDNSER_BIND", default_value = "0.0.0.0")]
+    pub bind: String,
+
+    #[arg(long, env = "DDNSER_METRICS_PORT", default_value_t = 9091)]
+    pub metrics_port: u16,
+
+    #[arg(long, env = "DDNSER_METRICS_BIND", default_value = "0.0.0.0")]
+    pub metrics_bind: String,
 
     #[arg(long, env = "DDNSER_LOG_LEVEL", default_value = "info")]
     pub log_level: String,
@@ -31,8 +43,8 @@ pub struct Args {
     #[arg(long, env = "DDNSER_DATABASE_URL")]
     pub database_url: String,
 
-    #[arg(long, env = "VERCEL_TOKEN")]
-    pub vercel_token: String,
+    #[arg(long, env = "DDNSER_CLOUDFLARE_TOKEN")]
+    pub cloudflare_token: String,
 
     /// Basic auth credentials the router must present on /nic/update.
     #[arg(long, env = "DDNSER_WEBHOOK_USERNAME")]
@@ -42,7 +54,7 @@ pub struct Args {
     pub webhook_password: String,
 
     /// Periodic full-sync interval in seconds.
-    #[arg(long, env = "DDNSER_SYNC_INTERVAL", default_value_t = 3600)]
+    #[arg(long, env = "DDNSER_SYNC_INTERVAL", default_value_t = 3600, value_parser = clap::value_parser!(u64).range(1..))]
     pub sync_interval: u64,
 
     #[arg(long, env = "DDNSER_OIDC_ISSUER")]
@@ -55,7 +67,11 @@ pub struct Args {
     pub oidc_client_secret: String,
 
     /// Externally reachable base URL of this service (for the OIDC redirect).
-    #[arg(long, env = "DDNSER_PUBLIC_URL", default_value = "http://localhost:8080")]
+    #[arg(
+        long,
+        env = "DDNSER_PUBLIC_URL",
+        default_value = "http://localhost:8080"
+    )]
     pub public_url: String,
 
     /// ID-token claim inspected for admin authorization.
@@ -79,7 +95,7 @@ pub struct Args {
 
 pub struct AppState {
     pub storage: Arc<Storage>,
-    pub vercel: Arc<Vercel>,
+    pub cloudflare: Arc<Cloudflare>,
     pub syncer: Syncer,
     pub oidc: auth::Oidc,
     pub key: Key,
@@ -118,8 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .init();
 
     let storage = Arc::new(Storage::connect(&args.database_url).await?);
-    let vercel = Arc::new(Vercel::new(args.vercel_token.clone()));
-    let syncer = Syncer::spawn(storage.clone(), vercel.clone(), args.sync_interval);
+    let cloudflare = Arc::new(Cloudflare::new(args.cloudflare_token.clone())?);
     let oidc = auth::Oidc::discover(
         &args.oidc_issuer,
         &args.oidc_client_id,
@@ -128,9 +143,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     )
     .await?;
 
+    let metrics = Arc::new(Metrics::new());
+    let syncer = Syncer::spawn(
+        storage.clone(),
+        cloudflare.clone(),
+        metrics.clone(),
+        args.sync_interval,
+    );
+    let metrics_addr = format!("{}:{}", args.metrics_bind, args.metrics_port);
+    let metrics_listener = tokio::net::TcpListener::bind(&metrics_addr).await?;
+    tracing::info!(addr = %metrics_addr, "ddnser metrics listener");
+    tokio::spawn(metrics.clone().serve(storage.clone(), metrics_listener));
     let state = App(Arc::new(AppState {
         storage,
-        vercel,
+        cloudflare,
         syncer,
         oidc,
         key: Key::derive_from(args.session_secret.as_bytes()),
@@ -144,8 +170,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let api = Router::new()
         .route("/me", get(api::me))
-        .route("/entries", get(api::list_entries).post(api::create_entry))
-        .route("/entries/{id}", put(api::update_entry).delete(api::delete_entry))
+        .route("/records", get(api::list_records).post(api::create_record))
+        .route(
+            "/records/{id}",
+            put(api::update_record).delete(api::delete_record),
+        )
         .route("/sync", post(api::sync_now))
         .route("/status", get(api::status))
         .layer(axum::middleware::from_fn_with_state(
@@ -169,9 +198,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         None => app.fallback(get(assets::serve)),
     };
 
-    let addr = format!("0.0.0.0:{}", args.port);
+    let addr = format!("{}:{}", args.bind, args.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(%addr, "ddnser listening");
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
