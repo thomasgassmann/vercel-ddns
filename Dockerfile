@@ -1,4 +1,4 @@
-FROM node:24-alpine@sha256:f1bf1b113e23ef6ea9d04fa0f15e374682fb2dcccce887c35383bd3f722a57d2 AS web
+FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS web
 WORKDIR /web
 COPY web/package.json web/pnpm-lock.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile
