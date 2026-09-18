@@ -72,6 +72,8 @@ pub struct Record<'a> {
     pub priority: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<RecordData<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -109,6 +111,8 @@ struct RecordBody<'a, 'b> {
     #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<&'a RecordData<'b>>,
     proxied: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<&'b str>,
 }
 
 impl Cloudflare {
@@ -277,6 +281,7 @@ impl Cloudflare {
                 priority: record.priority,
                 data: record.data.as_ref(),
                 proxied: false,
+                comment: record.comment,
             })
             .build()
     }
@@ -320,6 +325,7 @@ mod tests {
             ttl: 1,
             priority: None,
             data: None,
+            comment: None,
         }
     }
 

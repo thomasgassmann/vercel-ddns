@@ -190,6 +190,7 @@ fn desired<'a>(record: &'a Record, value: &'a str) -> crate::cloudflare::Record<
             "CAA" => Some(RecordData::Caa(caa_data(value))),
             _ => None,
         },
+        comment: Some("managed by ddnser"),
     }
 }
 
@@ -330,17 +331,28 @@ async fn reconcile(
                 }
             }
         }
-    } else if let Some(remote) = existing.iter().find(|remote| {
-        identity_matches(record, remote)
-            && content_matches(record, value, remote)
-            && remote.ttl == record.ttl as u32
-            && !remote.proxied
-    }) {
+    } else if let Some(remote) = existing.iter().find(|remote| identity_matches(record, remote)) {
+        // A record with the same name and type already exists on Cloudflare
+        // but we have no local provider_record_id (e.g. DB was rebuilt).
+        // Adopt it, updating content/TTL if needed.
         storage
             .set_provider_id(record.id, zone, &remote.id)
             .await
             .map_err(|_| "provider record ID could not be saved")?;
-        "unchanged"
+        if content_matches(record, value, remote)
+            && remote.ttl == record.ttl as u32
+            && !remote.proxied
+        {
+            "unchanged"
+        } else {
+            let remote = cloudflare
+                .update_record(zone, &remote.id, &desired(record, value))
+                .await
+                .map_err(|e| e.to_string())?;
+            let index = existing.iter().position(|r| r.id == remote.id).unwrap();
+            existing[index] = remote;
+            "updated"
+        }
     } else {
         let remote = cloudflare
             .create_record(zone, &desired(record, value))
