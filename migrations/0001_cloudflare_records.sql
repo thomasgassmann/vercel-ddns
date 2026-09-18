@@ -13,7 +13,7 @@ CREATE TABLE records (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE NULLS NOT DISTINCT (fqdn, record_type, value),
     UNIQUE (zone_id, provider_record_id),
-    CHECK (value IS NOT NULL OR record_type IN ('A', 'AAAA')),
+    CHECK (value IS NOT NULL OR record_type = 'A'),
     CHECK (
         (record_type IN ('MX', 'SRV') AND priority IS NOT NULL AND priority BETWEEN 0 AND 65535)
         OR (record_type NOT IN ('MX', 'SRV') AND priority IS NULL)
@@ -31,7 +31,6 @@ CREATE TABLE sync_runs (
     started_at TIMESTAMPTZ NOT NULL,
     finished_at TIMESTAMPTZ NOT NULL,
     ipv4 TEXT,
-    ipv6 TEXT,
     created INTEGER NOT NULL,
     updated INTEGER NOT NULL,
     unchanged INTEGER NOT NULL,
