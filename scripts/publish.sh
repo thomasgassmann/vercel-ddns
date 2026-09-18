@@ -46,7 +46,7 @@ image="$registry/ddnser/ddnser:$version"
 docker buildx build --platform linux/amd64 --load \
   --label "org.opencontainers.image.version=$version" \
   --label "org.opencontainers.image.revision=$revision" \
-  --label 'org.opencontainers.image.source=https://github.com/thomasgassmann/vercel-ddns' \
+  --label 'org.opencontainers.image.source=https://github.com/thomasgassmann/ddnser' \
   --tag "$image" --file "$work/source/Dockerfile" "$work/source"
 
 actual=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")

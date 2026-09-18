@@ -6,7 +6,7 @@ license = "MIT"
 description = "Dynamic DNS daemon"
 keywords = ["dynamic", "ddns", "dns", "cloudflare"]
 readme = "README.md"
-repository = "https://github.com/thomasgassmann/vercel-ddns"
+repository = "https://github.com/thomasgassmann/ddnser"
 authors = [
     "Thomas Gassmann <thomas@gassmann.dev>",
     "Rodrigo Sanabria <rodrigosanabria22@gmail.com>"
