@@ -170,7 +170,38 @@ fn belongs_to(fqdn: &str, zone: &str) -> bool {
 }
 
 fn identity_matches(record: &Record, remote: &DnsRecord) -> bool {
-    same_name(&record.fqdn, &remote.name) && record.record_type == remote.record_type
+    if !same_name(&record.fqdn, &remote.name) || record.record_type != remote.record_type {
+        return false;
+    }
+    // For record types where multiple records share the same name and type,
+    // also compare the distinguishing content so we match the correct one.
+    match record.record_type.as_str() {
+        "CAA" => match (
+            record.value.as_deref().map(caa_data),
+            remote.data.as_ref(),
+        ) {
+            (Some(local), Some(data)) => {
+                data.get("flags").and_then(|v| v.as_u64()) == Some(u64::from(local.flags))
+                    && data.get("tag").and_then(|v| v.as_str()) == Some(local.tag)
+                    && data.get("value").and_then(|v| v.as_str()) == Some(local.value)
+            }
+            _ => false,
+        },
+        "SRV" => match (
+            record.priority,
+            record.weight,
+            record.port,
+            remote.data.as_ref(),
+        ) {
+            (Some(pri), Some(wgt), Some(port), Some(data)) => {
+                data.get("priority").and_then(|v| v.as_i64()) == Some(pri as i64)
+                    && data.get("weight").and_then(|v| v.as_i64()) == Some(wgt as i64)
+                    && data.get("port").and_then(|v| v.as_i64()) == Some(port as i64)
+            }
+            _ => false,
+        },
+        _ => true,
+    }
 }
 
 fn desired<'a>(record: &'a Record, value: &'a str) -> crate::cloudflare::Record<'a> {
