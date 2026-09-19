@@ -230,10 +230,19 @@ fn content_matches(record: &Record, value: &str, remote: &DnsRecord) -> bool {
 
 fn caa_data(value: &str) -> CaaData<'_> {
     let mut parts = value.splitn(3, ' ');
+    let raw = parts.next().unwrap();
+    let tag = parts.next().unwrap();
+    let value = parts.next().unwrap();
+    // Strip surrounding double quotes — they are zone-file syntax
+    // (RFC 8659 §4.1) but the Cloudflare API expects the bare value.
+    let value = value
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(value);
     CaaData {
-        flags: parts.next().unwrap().parse().unwrap(),
-        tag: parts.next().unwrap(),
-        value: parts.next().unwrap(),
+        flags: raw.parse().unwrap(),
+        tag,
+        value,
     }
 }
 

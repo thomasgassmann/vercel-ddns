@@ -133,3 +133,21 @@ async fn reconciliation_integration() {
         storage.delete(row.id).await.unwrap();
     }).await.unwrap();
 }
+
+#[test]
+fn caa_data_strips_surrounding_quotes() {
+    // Zone-file syntax includes quotes around values with special characters,
+    // but the Cloudflare API expects the bare value.
+    let data = caa_data(r#"0 iodef "mailto:thomas@gassmann.dev""#);
+    assert_eq!(data.flags, 0);
+    assert_eq!(data.tag, "iodef");
+    assert_eq!(data.value, "mailto:thomas@gassmann.dev");
+}
+
+#[test]
+fn caa_data_leaves_unquoted_value_unchanged() {
+    let data = caa_data("0 issue letsencrypt.org");
+    assert_eq!(data.flags, 0);
+    assert_eq!(data.tag, "issue");
+    assert_eq!(data.value, "letsencrypt.org");
+}
