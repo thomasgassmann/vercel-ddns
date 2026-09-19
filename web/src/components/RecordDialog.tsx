@@ -37,7 +37,7 @@ export default function RecordDialog({ open, record, onClose }: Props) {
     const [fqdn, setFqdn] = useState(record?.fqdn ?? "");
     const [recordType, setRecordType] = useState<RecordType>(record?.record_type ?? "A");
     const [value, setValue] = useState(record?.value ?? "");
-    const [ttl, setTtl] = useState(String(record?.ttl ?? 3600));
+    const [ttl, setTtl] = useState(String(record?.ttl ?? 60));
     const [priority, setPriority] = useState(record?.priority?.toString() ?? "");
     const [weight, setWeight] = useState(record?.weight?.toString() ?? "");
     const [port, setPort] = useState(record?.port?.toString() ?? "");
